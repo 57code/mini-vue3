@@ -1,0 +1,206 @@
+<div id="app">
+  <h3>{{title}}</h3>
+</div>
+
+<script>
+
+  function reactive(obj) {
+    return new Proxy(obj, {
+      get(target, key) {
+        track(target, key)
+        return target[key]
+      },
+      set(target, key, value) {
+        target[key] = value
+        trigger(target, key)
+      },
+    })
+  }
+
+  const effectStack = []
+  function effect(fn) {
+    const eff = function () {
+      try {
+        effectStack.push(fn)
+        fn()
+      } finally {
+        effectStack.pop()
+      }
+    }
+
+    eff()
+
+    return eff
+  }
+
+  function h(tag, props, children) {
+    return { tag, props, children }
+  }
+
+  const targetMap = {}
+  function track(target, key) {
+    const effect = effectStack[effectStack.length - 1]
+    if (effect) {
+      let map = targetMap[target]
+      if (!map) {
+        map = targetMap[target] = {}
+      }
+
+      let deps = map[key]
+      if (!deps) {
+        deps = map[key] = []
+      }
+
+      if (deps.indexOf(effect) === -1) {
+        deps.push(effect)
+      }
+    }
+  }
+
+  function trigger(target, key) {
+    const map = targetMap[target]
+
+    if (map) {
+      const deps = map[key]
+
+      if (deps) {
+        deps.forEach(dep => dep())
+      }
+    }
+  }
+
+  const Vue = {
+    createApp(options) {
+      const renderer = this.createRenderer({
+        querySelector(selector) {
+          return document.querySelector(selector)
+        },
+        insert(child, parent, anchor) {
+          parent.insertBefore(child, anchor || null)
+        },
+        createElement(tag) {
+          return document.createElement(tag)
+        }
+      })
+      return renderer.createApp(options)
+    },
+    createRenderer({ querySelector, insert, createElement }) {
+      return {
+        createApp(options) {
+          return {
+            mount(selector) {
+              const parent = querySelector(selector)
+              if (!options.render) {
+                options.render = this.compile(parent.innerHTML)
+              }
+
+              if (options.setup) {
+                this.setupState = options.setup()
+              } else {
+                this.data = options.data()
+              }
+              this.proxy = new Proxy(this, {
+                get(target, key) {
+                  if (key in target.setupState) {
+                    return target.setupState[key]
+                  } else {
+                    return target.data[key]
+                  }
+                },
+                set(target, key, val) {
+                  if (key in target.setupState) {
+                    target.setupState[key] = val
+                  } else {
+                    target.data[key] = val
+                  }
+                }
+              })
+
+              this.update = effect(() => {
+
+                // const el = options.render.call(this.proxy)
+                // parent.innerHTML = ''
+                // insert(el, parent)
+
+                const vnode = options.render.call(this.proxy)
+                if (!this.isMounted) {
+                  const el = this.createElm(vnode)
+                  parent.innerHTML = ''
+                  insert(el, parent)
+                  this.isMounted = true
+                } else {
+                  this.patch(this._vnode, vnode)
+                }
+                this._vnode = vnode
+              })
+
+              // this.update()
+            },
+            createElm(vnode) {
+              const el = createElement(vnode.tag)
+              if (typeof vnode.children === 'string') {
+                el.textContent = vnode.children
+              } else {
+                vnode.children.forEach(child => insert(this.createElm(child), el))
+              }
+              vnode.el = el
+              return el
+            },
+            patch(n1, n2) {
+              const el = n2.el = n1.el
+
+              if(n1.tag === n2.tag) {
+                const oldCh = n1.children
+                const newCh = n2.children
+
+                if (typeof oldCh === 'string') {
+                  if (typeof newCh === 'string') {
+                    if (oldCh !== newCh) {
+                      el.textContent = newCh
+                    }
+                  } else {
+                    // replace text with elements
+                  }
+                } else {
+                  if (typeof newCh === 'string') {
+                    // replace elements with text
+                  } else {
+                    // update children
+                  }
+                }
+              }
+            },
+            compile(template) {
+              return function render() {
+                // const h3 = document.createElement('h3')
+                // h3.textContent = this.title
+                // return h3
+                return h('h3', null, this.title)
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+</script>
+<script>
+  const app = Vue.createApp({
+    data() {
+      return {
+        title: 'hello, vue3!'
+      }
+    },
+    setup() {
+      const state = reactive({
+        title: 'hello, vue3!!!'
+      })
+      setTimeout(() => {
+        state.title = 'vue3, hello!!!'
+      }, 2000);
+      return state
+    }
+  })
+
+  app.mount('#app')
+</script>
