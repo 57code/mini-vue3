@@ -1,0 +1,108 @@
+<div id="app">
+  <h3>{{title}}</h3>
+</div>
+
+<script>
+  // createApp返回应用程序实例是什么样子
+  const Vue = {
+    createApp(options) {
+      // 暴露给浏览器平台
+      const renderer = Vue.createRenderer({
+        querySelector(selector) {
+          return document.querySelector(selector)
+        },
+        insert(child, parent, anchor) {
+          parent.insertBefore(child, anchor || null)
+        }
+      })
+      return renderer.createApp(options)
+    },
+    createRenderer({ querySelector, insert }) {
+      // 返回自定义渲染器
+      return {
+        createApp(options) {
+          // 返回的就是app实例
+          return {
+            mount(selector) {
+              // mount的目标是什么？
+              const parent = querySelector(selector)
+
+              // 需要将组件配置解析为dom
+              // 通过render函数实现
+              if (!options.render) {
+                options.render = this.compile(parent.innerHTML)
+              }
+
+              // 兼容options api
+              if (options.setup) {
+                this.setupState = options.setup()
+              } else {
+                this.data = options.data()
+              }
+
+              // Proxy
+              // 确定render中数据从哪获取
+              this.proxy = new Proxy(this, {
+                get(target, key) {
+                  if (key in target.setupState) {
+                    return target.setupState[key]
+                  } else {
+                    return target.data[key]
+                  }
+                },
+                set(target, key, val) {
+                  if (key in target.setupState) {
+                    target.setupState[key] = val
+                  } else {
+                    target.data[key] = val
+                  }
+                }
+              })
+
+              const el = options.render.call(this.proxy)
+
+              // 追加到宿主元素上去
+              parent.innerHTML = ''
+              // parent.appendChild(el)
+              insert(el, parent)
+
+            },
+            compile(template) {
+              // 没有用到template
+              return function render() {
+                const h3 = document.createElement('h3')
+                h3.textContent = this.title
+                return h3
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+</script>
+<script>
+  // new Vue
+  // 1.函数式: 类型支持更好，ts
+  // 2.标准化、简化、一致性:render函数，sync修饰符删除，指令定义，v-model调整
+  // 3.tree-shaking
+  // 4.复用性：composition api
+  // 5.性能优化：响应式、编译期优化
+  // 6.扩展性：自定义渲染器
+  const { createApp } = Vue
+  const app = createApp({
+    data() {
+      return {
+        title: 'hello vue3!'
+      }
+    },
+    setup() {
+      // 调函数等等
+      // 规避this
+      return {
+        title: 'hello vue3!!!!!!'
+      }
+    },
+  })
+  app.mount('#app')
+</script>
